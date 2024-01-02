@@ -1,8 +1,7 @@
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use hidapi::HidApi;
 use regex::Regex;
-use tokio::task;
 
 /// splitkb.com vendor id
 const VENDOR_ID: u16 = 0x8d1d;
@@ -15,16 +14,28 @@ const REFRESH_RATE_SECS: u16 = 60;
 async fn fetch_stock_tickers() {
     println!("Run of stock tickers function");
 
-    let price =
-        Regex::new("data-symbol=\"TSLA.*?regularMarketPrice.*?value=\"(?<price>.*?)\"").unwrap();
-    let req = reqwest::get("https://finance.yahoo.com/quote/TSLA/").await;
-    let body = req.expect("Request failed").text().await.unwrap();
+    let mut stocks = HashMap::from([("TSLA", 0.0), ("APPL", 0.0)]);
 
-    let Some(caps) = price.captures(&body) else {
-        print!("No match");
-        return;
-    };
-    println!("{:?}", caps.name("price").unwrap());
+    for stock in stocks.clone().into_iter() {
+        let regex_str = format!(
+            "data-symbol=\"{}.*?regularMarketPrice.*?value=\"(?<price>.*?)\"",
+            stock.0
+        );
+
+        let price = Regex::new(&regex_str).unwrap();
+        let url = format!("https://finance.yahoo.com/quote/{}/", stock.0);
+        let req = reqwest::get(url).await;
+        let body = req.expect("Request failed").text().await.unwrap();
+
+        if let Some(caps) = price.captures(&body) {
+            let b = caps.name("price").map_or("0", |m| m.as_str());
+            stocks
+                .get_mut(stock.0)
+                .map(|v| *v = b.parse().unwrap_or(0.0));
+        }
+    }
+
+    println!("Fetch done");
 }
 
 async fn run() {
