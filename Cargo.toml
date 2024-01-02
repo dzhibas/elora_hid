@@ -1,9 +1,8 @@
 [package]
 name = "elora_hid"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 hidapi = "2.4.1"
+tokio = { version = "1.35.1", features = ["full"] }
