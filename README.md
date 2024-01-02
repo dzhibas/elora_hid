@@ -1,4 +1,4 @@
-#Elora HID interface 
+# Elora HID interface 
 
 Application to collect data and push it through USB to Elora split keyboard
 
