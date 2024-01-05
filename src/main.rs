@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ffi::CString, time::Duration};
 
-use hidapi::HidApi;
+use hidapi::{HidApi, HidError};
 use regex::Regex;
 
 /// splitkb.com vendor id
@@ -14,7 +14,7 @@ const USAGE_PAGE: u16 = 0xFF60;
 /// How often to refetch new data from dependency services
 const REFRESH_RATE_SECS: u16 = 60;
 
-async fn fetch_stock_tickers() {
+async fn fetch_stock_tickers() -> HashMap<&'static str, f64> {
     println!("Run of stock tickers function");
 
     let mut stocks = HashMap::from([("TSLA", 0.0), ("APPL", 0.0)]);
@@ -38,10 +38,40 @@ async fn fetch_stock_tickers() {
         }
     }
     println!("Fetch done");
+    stocks.clone()
 }
 
-async fn run() {
-    fetch_stock_tickers().await;
+fn convert_to_buffer(stocks: HashMap<&'static str, f64>) -> Vec<u8> {
+    let mut buf = Vec::new();
+    for (ticker, v) in stocks {
+        let st_string = format!("{}: {}", ticker, v);
+        for ch in st_string.chars() {
+            buf.push(ch as u8);
+        }
+    }
+    buf
+}
+
+async fn send_to_keyboard(
+    keyboard: &CString,
+    stocks: HashMap<&'static str, f64>,
+) -> Result<(), HidError> {
+    println!("Sending to usb keyboard");
+    let api = HidApi::new()?;
+    let device_info = api
+        .device_list()
+        .find(|&d| d.path().to_owned() == *keyboard);
+    let device = device_info.unwrap().open_device(&api);
+
+    let buf = convert_to_buffer(stocks);
+    device?.write(&buf)?;
+
+    Ok(())
+}
+
+async fn run(keyboard: &CString) {
+    let stocks = fetch_stock_tickers().await;
+    let _ = send_to_keyboard(&keyboard, stocks).await;
 }
 
 #[tokio::main]
@@ -79,6 +109,6 @@ async fn main() {
     let mut interval = tokio::time::interval(Duration::from_secs(REFRESH_RATE_SECS.into()));
     loop {
         interval.tick().await;
-        run().await;
+        run(&interface.clone().unwrap()).await;
     }
 }
