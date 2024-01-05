@@ -17,7 +17,7 @@ const REFRESH_RATE_SECS: u16 = 60;
 async fn fetch_stock_tickers() -> HashMap<&'static str, f64> {
     println!("Run of stock tickers function");
 
-    let mut stocks = HashMap::from([("TSLA", 0.0), ("VWRL", 0.0)]);
+    let mut stocks = HashMap::from([("TSLA", 0.0), ("VWRL.AS", 0.0), ("AAPL", 0.0)]);
 
     for stock in stocks.clone().into_iter() {
         let regex_str = format!(
@@ -44,7 +44,7 @@ async fn fetch_stock_tickers() -> HashMap<&'static str, f64> {
 fn convert_to_buffer(stocks: HashMap<&'static str, f64>) -> Vec<u8> {
     let mut buf = Vec::new();
     for (ticker, v) in stocks {
-        let st_string = format!("{}: {}", ticker, v);
+        let st_string = format!("{}: {}\n", ticker, v);
         for ch in st_string.chars() {
             buf.push(ch as u8);
         }
@@ -116,8 +116,18 @@ async fn main() {
 #[tokio::test]
 async fn testing_fetch_of_stock() {
     let st = fetch_stock_tickers().await;
-    assert_eq!(st.contains_key("TSLA"), true);
-    assert_eq!(st.get(&"TSLA").unwrap() > &0.0, true);
 
-    assert_eq!(st.contains_key("VWRL"), true);
+    /// Example output:
+    ///
+    /// [src/main.rs:120] &st = {
+    /// "VWRL.AS": 107.2,
+    /// "TSLA": 237.03,
+    /// "AAPL": 180.51,
+    /// }
+
+    assert_eq!(st.contains_key("TSLA"), true);
+    assert_eq!(st.get("TSLA").unwrap() > &0.0, true);
+
+    assert_eq!(st.contains_key("VWRL.AS"), true);
+    assert_eq!(st.get("VWRL.AS").unwrap() > &0.0, true);
 }
