@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, ffi::CStr, time::Duration};
 
 use hidapi::HidApi;
 use regex::Regex;
@@ -7,6 +7,9 @@ use regex::Regex;
 const VENDOR_ID: u16 = 0x8d1d;
 /// Elora product id
 const PRODUCT_ID: u16 = 0x9d9d;
+
+const USAGE_ID: u16 = 0x61;
+const USAGE_PAGE: u16 = 0xFF60;
 
 /// How often to refetch new data from dependency services
 const REFRESH_RATE_SECS: u16 = 60;
@@ -34,7 +37,6 @@ async fn fetch_stock_tickers() {
                 .map(|v| *v = b.parse().unwrap_or(0.0));
         }
     }
-
     println!("Fetch done");
 }
 
@@ -44,13 +46,14 @@ async fn run() {
 
 #[tokio::main]
 async fn main() {
-    let mut found = false;
-
-    match HidApi::new() {
+    let interface: Option<&CStr> = match HidApi::new() {
         Ok(api) => {
             for dev in api.device_list() {
-                if dev.vendor_id() == VENDOR_ID && dev.product_id() == PRODUCT_ID {
-                    found = true;
+                if dev.vendor_id() == VENDOR_ID
+                    && dev.product_id() == PRODUCT_ID
+                    && dev.usage() == USAGE_ID
+                    && dev.usage_page() == USAGE_PAGE
+                {
                     println!(
                         "{:03x}:{:04x} {:?} {:?}",
                         dev.vendor_id(),
@@ -58,14 +61,16 @@ async fn main() {
                         dev.manufacturer_string(),
                         dev.product_string()
                     );
+                    Some(dev.path());
                     break;
                 }
             }
+            None
         }
-        Err(_) => eprintln!("Error happened"),
-    }
+        Err(_) => None,
+    };
 
-    if !found {
+    if interface.is_none() {
         eprintln!("Keyboard not found connected");
         return;
     }
