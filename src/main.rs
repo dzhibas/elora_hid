@@ -17,7 +17,7 @@ const REFRESH_RATE_SECS: u16 = 60;
 async fn fetch_stock_tickers() -> HashMap<&'static str, f64> {
     println!("Run of stock tickers function");
 
-    let mut stocks = HashMap::from([("TSLA", 0.0), ("APPL", 0.0)]);
+    let mut stocks = HashMap::from([("TSLA", 0.0), ("VWRL", 0.0)]);
 
     for stock in stocks.clone().into_iter() {
         let regex_str = format!(
@@ -111,4 +111,13 @@ async fn main() {
         interval.tick().await;
         run(&interface.clone().unwrap()).await;
     }
+}
+
+#[tokio::test]
+async fn testing_fetch_of_stock() {
+    let st = fetch_stock_tickers().await;
+    assert_eq!(st.contains_key("TSLA"), true);
+    assert_eq!(st.get(&"TSLA").unwrap() > &0.0, true);
+
+    assert_eq!(st.contains_key("VWRL"), true);
 }
