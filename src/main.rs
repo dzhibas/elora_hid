@@ -1,10 +1,6 @@
-use std::{
-    collections::HashMap,
-    ffi::{CString},
-    time::Duration,
-};
+use std::{collections::HashMap, ffi::CString, time::Duration};
 
-use hidapi::{HidApi};
+use hidapi::HidApi;
 use regex::Regex;
 
 /// splitkb.com vendor id
