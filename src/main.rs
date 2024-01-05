@@ -1,6 +1,10 @@
-use std::{collections::HashMap, ffi::CStr, time::Duration};
+use std::{
+    collections::HashMap,
+    ffi::{CString},
+    time::Duration,
+};
 
-use hidapi::HidApi;
+use hidapi::{HidApi};
 use regex::Regex;
 
 /// splitkb.com vendor id
@@ -46,8 +50,9 @@ async fn run() {
 
 #[tokio::main]
 async fn main() {
-    let interface: Option<&CStr> = match HidApi::new() {
+    let interface: Option<CString> = match HidApi::new() {
         Ok(api) => {
+            let mut found: Option<CString> = None;
             for dev in api.device_list() {
                 if dev.vendor_id() == VENDOR_ID
                     && dev.product_id() == PRODUCT_ID
@@ -61,18 +66,18 @@ async fn main() {
                         dev.manufacturer_string(),
                         dev.product_string()
                     );
-                    Some(dev.path());
+                    found = Some(dev.path().to_owned());
                     break;
                 }
             }
-            None
+            found
         }
         Err(_) => None,
     };
 
     if interface.is_none() {
         eprintln!("Keyboard not found connected");
-        return;
+        return ();
     }
 
     let mut interval = tokio::time::interval(Duration::from_secs(REFRESH_RATE_SECS.into()));
