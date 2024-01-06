@@ -97,30 +97,18 @@ async fn main() {
 "
     );
 
-    let interface: Option<CString> = match HidApi::new() {
-        Ok(api) => {
-            let mut found: Option<CString> = None;
-            for dev in api.device_list() {
-                if dev.vendor_id() == VENDOR_ID
-                    && dev.product_id() == PRODUCT_ID
-                    && dev.usage() == USAGE_ID
-                    && dev.usage_page() == USAGE_PAGE
-                {
-                    println!(
-                        "{:03x}:{:04x} {:?} {:?}",
-                        dev.vendor_id(),
-                        dev.product_id(),
-                        dev.manufacturer_string(),
-                        dev.product_string()
-                    );
-                    found = Some(dev.path().to_owned());
-                    break;
-                }
-            }
-            found
-        }
-        Err(_) => None,
-    };
+    let api = HidApi::new().unwrap();
+    let device = api.device_list().find(|&dev| {
+        dev.vendor_id() == VENDOR_ID
+            && dev.product_id() == PRODUCT_ID
+            && dev.usage() == USAGE_ID
+            && dev.usage_page() == USAGE_PAGE
+    });
+
+    let mut interface: Option<CString> = None;
+    if let Some(dev) = device {
+        interface = Some(dev.path().to_owned());
+    }
 
     if interface.is_none() {
         eprintln!("Error: Elora keyboard not found connected");
