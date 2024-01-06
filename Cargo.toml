@@ -1,7 +1,8 @@
 [package]
 name = "elora_hid"
-version = "0.1.10"
+version = "0.1.11"
 edition = "2021"
+authors = ["Nikolajus <nikolajus@gmail.com>"]
 
 [dependencies]
 hidapi = "2.4.1"

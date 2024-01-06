@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ffi::CString, time::Duration};
+use std::{collections::HashMap, error::Error, ffi::CString, time::Duration};
 
 use hidapi::{HidApi, HidError};
 use regex::Regex;
@@ -11,15 +11,18 @@ const PRODUCT_ID: u16 = 0x9d9d;
 const USAGE_ID: u16 = 0x61;
 const USAGE_PAGE: u16 = 0xFF60;
 
-/// How often to refetch new data from dependency services
+/// How often to refetch new data from dependency services in seconds
 const REFRESH_RATE_SECS: u16 = 60;
 
-// type alias
+// type alias for stock tickers
 type StockTickerType = HashMap<&'static str, f64>;
 // interested tickers
 const TICKERS: [(&str, f64); 2] = [("TSLA", 0.0), ("VWRL.AS", 0.0)];
 
-async fn fetch_stock_tickers() -> StockTickerType {
+// custom app error
+type AppError = Box<dyn Error>;
+
+async fn fetch_stock_tickers() -> Result<StockTickerType, AppError> {
     println!("Run of stock tickers function");
 
     let mut stocks = HashMap::from(TICKERS);
@@ -37,18 +40,21 @@ async fn fetch_stock_tickers() -> StockTickerType {
 
         if let Some(caps) = price.captures(&body) {
             let b = caps.name("price").map_or("0", |m| m.as_str());
-            stocks
-                .get_mut(stock.0)
-                .map(|v| *v = b.parse().unwrap_or(0.0));
+            if let Some(v) = stocks.get_mut(stock.0) {
+                *v = b.parse().unwrap_or(0.0);
+            }
         }
     }
     println!("Fetch done");
-    stocks.clone()
+    Ok(stocks.clone())
 }
 
-fn convert_to_buffer(stocks: HashMap<&'static str, f64>) -> Vec<u8> {
+/// Converts StockTickerType into string which is sent through usb to keyboard
+fn convert_to_buffer(stocks: StockTickerType) -> Vec<u8> {
     let mut buf = Vec::new();
     for (ticker, v) in stocks {
+        // we use max 4 chars for ticker and 3 digits and $ sign so one line max 10chars on oled
+        // example: TSLA: 500$
         let st_string = format!("{:.4}: {:.0}$", ticker, v);
         for ch in st_string.chars() {
             buf.push(ch as u8);
@@ -57,10 +63,8 @@ fn convert_to_buffer(stocks: HashMap<&'static str, f64>) -> Vec<u8> {
     buf
 }
 
-async fn send_to_keyboard(
-    keyboard: &CString,
-    stocks: HashMap<&'static str, f64>,
-) -> Result<(), HidError> {
+/// sends stock ticker to keyboard
+async fn send_to_keyboard(keyboard: &CString, stocks: StockTickerType) -> Result<(), HidError> {
     println!("Sending to usb keyboard");
     let api = HidApi::new()?;
     let device_info = api
@@ -73,9 +77,11 @@ async fn send_to_keyboard(
     Ok(())
 }
 
-async fn run(keyboard: &CString) {
-    let stocks = fetch_stock_tickers().await;
-    let _ = send_to_keyboard(&keyboard, stocks).await;
+/// Main worker which fetches stuff and sends it to keyboard
+async fn run(keyboard: &CString) -> Result<(), AppError> {
+    let stocks = fetch_stock_tickers().await?;
+    let _ = send_to_keyboard(keyboard, stocks).await;
+    Ok(())
 }
 
 #[tokio::main]
@@ -117,19 +123,19 @@ async fn main() {
 
     if interface.is_none() {
         eprintln!("Error: Elora keyboard not found connected");
-        return ();
+        return;
     }
 
     let mut interval = tokio::time::interval(Duration::from_secs(REFRESH_RATE_SECS.into()));
     loop {
         interval.tick().await;
-        run(&interface.clone().unwrap()).await;
+        let _ = run(&interface.clone().unwrap()).await;
     }
 }
 
 #[tokio::test]
-async fn testing_fetch_of_stock() {
-    let st = fetch_stock_tickers().await;
+async fn testing_fetch_of_stock() -> Result<(), AppError> {
+    let st = fetch_stock_tickers().await?;
 
     // Example output:
     //
@@ -144,4 +150,5 @@ async fn testing_fetch_of_stock() {
 
     assert_eq!(st.contains_key("VWRL.AS"), true);
     assert_eq!(st.get("VWRL.AS").unwrap() > &0.0, true);
+    Ok(())
 }
