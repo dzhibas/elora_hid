@@ -3,7 +3,8 @@
 Application to collect data and push it through USB to Elora split keyboard. For now it's just $TSLA & $VWRL.AS stock prices
 
 On host machine which has keyboard connected:
-$ cargo run
+
+`$ cargo run`
 
 On keyboard to get it running, flash with custom firmware (fork of vial-qmk elora_raw_hid branch):
 
