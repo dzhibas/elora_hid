@@ -54,9 +54,9 @@ fn convert_to_buffer(stocks: StockTickerType) -> Vec<u8> {
     let mut buf = Vec::new();
     for (ticker, v) in stocks {
         // we use max 4 chars for ticker so it fits. example:
-        // TSLA$500.0
-        // VWRL$200.1
-        let st_string = format!("{:.4}${:.1}", ticker, v);
+        // TSLA: 500$
+        // VWRL: 200$
+        let st_string = format!("{:.4}: {:.0}$", ticker, v);
         for ch in st_string.chars() {
             buf.push(ch as u8);
         }
@@ -146,5 +146,5 @@ async fn testing_fetch_of_stock() -> Result<(), AppError> {
 fn testing_conversion_to_buffer() {
     let stocks: StockTickerType = BTreeMap::from([("TSLA", 500.0), ("VWRL.AS", 200.1)]);
     let buf = convert_to_buffer(stocks);
-    assert_eq!(String::from_utf8(buf).unwrap(), "TSLA$500.0VWRL$200.1");
+    assert_eq!(String::from_utf8(buf).unwrap(), "TSLA: 500$VWRL: 200$");
 }
