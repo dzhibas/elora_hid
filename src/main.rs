@@ -17,7 +17,7 @@ const REFRESH_RATE_SECS: u16 = 60;
 async fn fetch_stock_tickers() -> HashMap<&'static str, f64> {
     println!("Run of stock tickers function");
 
-    let mut stocks = HashMap::from([("TSLA", 0.0), ("VWRL.AS", 0.0), ("AAPL", 0.0)]);
+    let mut stocks = HashMap::from([("TSLA", 0.0), ("VWRL.AS", 0.0)]);
 
     for stock in stocks.clone().into_iter() {
         let regex_str = format!(
@@ -44,7 +44,7 @@ async fn fetch_stock_tickers() -> HashMap<&'static str, f64> {
 fn convert_to_buffer(stocks: HashMap<&'static str, f64>) -> Vec<u8> {
     let mut buf = Vec::new();
     for (ticker, v) in stocks {
-        let st_string = format!("{}: {}\n", ticker, v);
+        let st_string = format!("{:.4}: {:.0}$", ticker, v);
         for ch in st_string.chars() {
             buf.push(ch as u8);
         }
@@ -62,10 +62,9 @@ async fn send_to_keyboard(
         .device_list()
         .find(|&d| d.path().to_owned() == *keyboard);
     let device = device_info.unwrap().open_device(&api);
-
     let buf = convert_to_buffer(stocks);
     device?.write(&buf)?;
-
+    println!("{}", String::from_utf8(buf).unwrap());
     Ok(())
 }
 

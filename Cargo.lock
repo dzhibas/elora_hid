@@ -110,7 +110,7 @@ checksum = "06ea2b9bc92be3c2baa9334a323ebca2d6f074ff852cd1d7b11064035cd3868f"
 
 [[package]]
 name = "elora_hid"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "hidapi",
  "regex",
