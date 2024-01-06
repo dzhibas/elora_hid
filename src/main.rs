@@ -12,7 +12,7 @@ const USAGE_ID: u16 = 0x61;
 const USAGE_PAGE: u16 = 0xFF60;
 
 /// How often to refetch new data from dependency services in seconds
-const REFRESH_RATE_SECS: u16 = 10;
+const REFRESH_RATE_SECS: u16 = 60;
 
 // type alias for stock tickers
 type StockTickerType = BTreeMap<&'static str, f64>;
