@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error, ffi::CString, time::Duration};
+use std::{collections::BTreeMap, error::Error, ffi::CString, time::Duration};
 
 use hidapi::{HidApi, HidError};
 use regex::Regex;
@@ -15,7 +15,7 @@ const USAGE_PAGE: u16 = 0xFF60;
 const REFRESH_RATE_SECS: u16 = 60;
 
 // type alias for stock tickers
-type StockTickerType = HashMap<&'static str, f64>;
+type StockTickerType = BTreeMap<&'static str, f64>;
 // interested tickers
 const TICKERS: [(&str, f64); 2] = [("TSLA", 0.0), ("VWRL.AS", 0.0)];
 
@@ -25,7 +25,7 @@ type AppError = Box<dyn Error>;
 async fn fetch_stock_tickers() -> Result<StockTickerType, AppError> {
     println!("Run of stock tickers function");
 
-    let mut stocks = HashMap::from(TICKERS);
+    let mut stocks = BTreeMap::from(TICKERS);
 
     for stock in stocks.clone().into_iter() {
         let regex_str = format!(
@@ -33,10 +33,10 @@ async fn fetch_stock_tickers() -> Result<StockTickerType, AppError> {
             stock.0
         );
 
-        let price = Regex::new(&regex_str).unwrap();
+        let price = Regex::new(&regex_str)?;
         let url = format!("https://finance.yahoo.com/quote/{}/", stock.0);
-        let req = reqwest::get(url).await;
-        let body = req.expect("Request failed").text().await.unwrap();
+        let req = reqwest::get(url).await?;
+        let body = req.text().await?;
 
         if let Some(caps) = price.captures(&body) {
             let b = caps.name("price").map_or("0", |m| m.as_str());
@@ -45,8 +45,8 @@ async fn fetch_stock_tickers() -> Result<StockTickerType, AppError> {
             }
         }
     }
-    println!("Fetch done");
-    Ok(stocks.clone())
+
+    Ok(stocks)
 }
 
 /// Converts StockTickerType into string which is sent through usb to keyboard
@@ -151,4 +151,11 @@ async fn testing_fetch_of_stock() -> Result<(), AppError> {
     assert_eq!(st.contains_key("VWRL.AS"), true);
     assert_eq!(st.get("VWRL.AS").unwrap() > &0.0, true);
     Ok(())
+}
+
+#[test]
+fn testing_conversion_to_buffer() {
+    let stocks: StockTickerType = BTreeMap::from([("TSLA", 500.0), ("VWRL.AS", 200.0)]);
+    let buf = convert_to_buffer(stocks);
+    assert_eq!(String::from_utf8(buf).unwrap(), "TSLA: 500$VWRL: 200$");
 }
