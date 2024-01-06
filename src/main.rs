@@ -14,10 +14,15 @@ const USAGE_PAGE: u16 = 0xFF60;
 /// How often to refetch new data from dependency services
 const REFRESH_RATE_SECS: u16 = 60;
 
-async fn fetch_stock_tickers() -> HashMap<&'static str, f64> {
+// type alias
+type StockTickerType = HashMap<&'static str, f64>;
+// interested tickers
+const TICKERS: [(&str, f64); 2] = [("TSLA", 0.0), ("VWRL.AS", 0.0)];
+
+async fn fetch_stock_tickers() -> StockTickerType {
     println!("Run of stock tickers function");
 
-    let mut stocks = HashMap::from([("TSLA", 0.0), ("VWRL.AS", 0.0)]);
+    let mut stocks = HashMap::from(TICKERS);
 
     for stock in stocks.clone().into_iter() {
         let regex_str = format!(
@@ -75,6 +80,16 @@ async fn run(keyboard: &CString) {
 
 #[tokio::main]
 async fn main() {
+    println!(
+        r"
+  _____ _                   _   _ ___ ____  
+ | ____| | ___  _ __ __ _  | | | |_ _|  _ \ 
+ |  _| | |/ _ \| '__/ _` | | |_| || || | | |
+ | |___| | (_) | | | (_| | |  _  || || |_| |
+ |_____|_|\___/|_|  \__,_| |_| |_|___|____/
+"
+    );
+
     let interface: Option<CString> = match HidApi::new() {
         Ok(api) => {
             let mut found: Option<CString> = None;
@@ -101,7 +116,7 @@ async fn main() {
     };
 
     if interface.is_none() {
-        eprintln!("Keyboard not found connected");
+        eprintln!("Error: Elora keyboard not found connected");
         return ();
     }
 
@@ -116,13 +131,13 @@ async fn main() {
 async fn testing_fetch_of_stock() {
     let st = fetch_stock_tickers().await;
 
-    /// Example output:
-    ///
-    /// [src/main.rs:120] &st = {
-    /// "VWRL.AS": 107.2,
-    /// "TSLA": 237.03,
-    /// "AAPL": 180.51,
-    /// }
+    // Example output:
+    //
+    // [src/main.rs:120] &st = {
+    // "VWRL.AS": 107.2,
+    // "TSLA": 237.03,
+    // "AAPL": 180.51,
+    // }
 
     assert_eq!(st.contains_key("TSLA"), true);
     assert_eq!(st.get("TSLA").unwrap() > &0.0, true);
