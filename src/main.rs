@@ -66,6 +66,7 @@ fn convert_to_buffer(stocks: StockTickerType) -> Vec<u8> {
     buf
 }
 
+/// searches for connected elora keyboard
 fn find_elora_device(api: &HidApi) -> Option<&DeviceInfo> {
     let device = api.device_list().find(|&dev| {
         dev.vendor_id() == VENDOR_ID
