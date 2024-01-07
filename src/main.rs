@@ -23,7 +23,7 @@ const TICKERS: [(&str, f64); 2] = [("TSLA", 0.0), ("VWRL.AS", 0.0)];
 type AppError = Box<dyn Error>;
 
 async fn fetch_stock_tickers() -> Result<StockTickerType, AppError> {
-    println!("Run of stock tickers function");
+    log::info!("Fetching stock tickers from remote");
 
     let mut stocks = BTreeMap::from(TICKERS);
 
@@ -45,6 +45,8 @@ async fn fetch_stock_tickers() -> Result<StockTickerType, AppError> {
             }
         }
     }
+
+    log::debug!("Fetching complete");
 
     Ok(stocks)
 }
@@ -76,7 +78,7 @@ fn find_elora_device(api: &HidApi) -> Option<&DeviceInfo> {
 
 /// sends stock ticker to keyboard
 async fn send_to_keyboard(stocks: StockTickerType) -> Result<(), AppError> {
-    println!("Sending to usb keyboard");
+    log::info!("Sending to usb keyboard");
 
     let api = HidApi::new()?;
     let device = find_elora_device(&api);
@@ -89,7 +91,8 @@ async fn send_to_keyboard(stocks: StockTickerType) -> Result<(), AppError> {
     let buf = convert_to_buffer(stocks);
     device?.write(&buf)?;
 
-    println!("{}", String::from_utf8(buf).unwrap());
+    log::debug!("{}", String::from_utf8(buf).unwrap());
+
     Ok(())
 }
 
@@ -98,13 +101,15 @@ async fn run() -> Result<(), AppError> {
     let stocks = fetch_stock_tickers().await?;
     let res = send_to_keyboard(stocks).await;
     if res.is_err() {
-        eprintln!("Error occured while sending data to keyboard");
+        log::error!("Error occured while sending data to keyboard");
     }
     Ok(())
 }
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+
     println!(
         r"
   _____ _                   _   _ ___ ____  
@@ -119,7 +124,7 @@ async fn main() {
     let device = find_elora_device(&api);
 
     if device.is_none() {
-        eprintln!("Error: Elora keyboard not found connected");
+        log::error!("Error: Elora keyboard not found connected");
         return;
     }
 

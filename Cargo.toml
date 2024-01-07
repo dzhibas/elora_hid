@@ -1,11 +1,13 @@
 [package]
 name = "elora_hid"
-version = "0.1.17"
+version = "0.1.18"
 edition = "2021"
 authors = ["Nikolajus <nikolajus@gmail.com>"]
 
 [dependencies]
+env_logger = "0.10.1"
 hidapi = "2.4.1"
+log = "0.4.20"
 regex = "1.10.2"
 reqwest = { version = "0.11.23", features = ["blocking"] }
 tokio = { version = "1.35.1", features = ["full"] }
