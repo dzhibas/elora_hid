@@ -17,7 +17,7 @@ const REFRESH_RATE_SECS: u16 = 60;
 // type alias for stock tickers
 type StockTickerType = BTreeMap<&'static str, f64>;
 // interested tickers
-const TICKERS: [(&str, f64); 2] = [("TSLA", 0.0), ("VWRL.AS", 0.0)];
+const TICKERS: [(&str, f64); 3] = [("TSLA", 0.0), ("VWRL.AS", 0.0), ("NVDA", 0.0)];
 
 // custom app error
 type AppError = Box<dyn Error>;
