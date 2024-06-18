@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, error::Error, time::Duration};
 
 use hidapi::{DeviceInfo, HidApi};
 use regex::Regex;
+use reqwest::Client;
 
 /// splitkb.com vendor id
 const VENDOR_ID: u16 = 0x8d1d;
@@ -33,9 +34,12 @@ async fn fetch_stock_tickers() -> Result<StockTickerType, AppError> {
             stock.0
         );
 
+        let chrome_user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36";
+        let client = Client::builder().user_agent(chrome_user_agent).build().unwrap();
+
         let price = Regex::new(&regex_str)?;
         let url = format!("https://finance.yahoo.com/quote/{}/", stock.0);
-        let req = reqwest::get(url).await?;
+        let req = client.get(url).send().await?;
         let body = req.text().await?;
 
         if let Some(caps) = price.captures(&body) {
