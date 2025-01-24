@@ -18,7 +18,7 @@ const REFRESH_RATE_SECS: u16 = 60;
 // type alias for stock tickers
 type StockTickerType = BTreeMap<&'static str, f64>;
 // interested tickers
-const TICKERS: [(&str, f64); 3] = [("TSLA", 0.0), ("VWRL.AS", 0.0), ("NVDA", 0.0)];
+const TICKERS: [(&str, f64); 3] = [("VWRL.AS", 0.0), ("TSLA", 0.0), ("NVDA", 0.0)];
 
 // custom app error
 type AppError = Box<dyn Error>;
@@ -30,12 +30,12 @@ async fn fetch_stock_tickers() -> Result<StockTickerType, AppError> {
 
     for stock in stocks.clone().into_iter() {
         let regex_str = format!(
-            "data-symbol=\"{}.*?regularMarketPrice.*?value=\"(?<price>.*?)\"",
+            "{}.*?regularMarketPrice.*?raw.*?:(?<price>.*?),",
             stock.0
         );
 
         let chrome_user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36";
-        let client = Client::builder().user_agent(chrome_user_agent).build().unwrap();
+        let client = Client::builder().user_agent(chrome_user_agent).no_gzip().build().unwrap();
 
         let price = Regex::new(&regex_str)?;
         let url = format!("https://finance.yahoo.com/quote/{}/", stock.0);
@@ -157,6 +157,9 @@ async fn testing_fetch_of_stock() -> Result<(), AppError> {
 
     assert_eq!(st.contains_key("VWRL.AS"), true);
     assert_eq!(st.get("VWRL.AS").unwrap() > &0.0, true);
+
+    dbg!(&st);
+
     Ok(())
 }
 
