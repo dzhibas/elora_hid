@@ -1,10 +1,11 @@
 [package]
 name = "elora_hid"
-version = "0.1.19"
+version = "0.1.20"
 edition = "2021"
 authors = ["Nikolajus <nikolajus@gmail.com>"]
 
 [dependencies]
+dotenv = "0.15.0"
 env_logger = "0.10.1"
 hidapi = "2.4.1"
 log = "0.4.20"

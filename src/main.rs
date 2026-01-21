@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, env, error::Error, time::Duration};
 
+use dotenv::dotenv;
 use hidapi::{DeviceInfo, HidApi};
 use reqwest::Client;
 use serde::Deserialize;
@@ -113,6 +114,7 @@ async fn run() -> Result<(), AppError> {
 
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
     env_logger::init();
 
     println!(
@@ -142,6 +144,7 @@ async fn main() {
 
 #[tokio::test]
 async fn testing_fetch_of_stock() -> Result<(), AppError> {
+    dotenv().ok();
     // Skip test if FINNHUB_TOKEN is not set
     if env::var("FINNHUB_TOKEN").is_err() {
         eprintln!("Skipping test: FINNHUB_TOKEN not set");
