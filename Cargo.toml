@@ -1,6 +1,6 @@
 [package]
 name = "elora_hid"
-version = "0.1.18"
+version = "0.1.19"
 edition = "2021"
 authors = ["Nikolajus <nikolajus@gmail.com>"]
 
@@ -8,6 +8,6 @@ authors = ["Nikolajus <nikolajus@gmail.com>"]
 env_logger = "0.10.1"
 hidapi = "2.4.1"
 log = "0.4.20"
-regex = "1.10.2"
-reqwest = { version = "0.11.23", features = ["blocking"] }
+reqwest = { version = "0.11.23", features = ["blocking", "json"] }
+serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.35.1", features = ["full"] }

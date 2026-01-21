@@ -1,8 +1,8 @@
-use std::{collections::BTreeMap, error::Error, time::Duration};
+use std::{collections::BTreeMap, env, error::Error, time::Duration};
 
 use hidapi::{DeviceInfo, HidApi};
-use regex::Regex;
 use reqwest::Client;
+use serde::Deserialize;
 
 /// splitkb.com vendor id
 const VENDOR_ID: u16 = 0x8d1d;
@@ -18,7 +18,14 @@ const REFRESH_RATE_SECS: u16 = 60;
 // type alias for stock tickers
 type StockTickerType = BTreeMap<&'static str, f64>;
 // interested tickers
-const TICKERS: [(&str, f64); 3] = [("VWRL.AS", 0.0), ("TSLA", 0.0), ("NVDA", 0.0)];
+const TICKERS: [(&str, f64); 2] = [("TSLA", 0.0), ("NVDA", 0.0)];
+
+/// Finnhub quote response
+#[derive(Deserialize)]
+struct FinnhubQuote {
+    /// Current price
+    c: f64,
+}
 
 // custom app error
 type AppError = Box<dyn Error>;
@@ -26,27 +33,21 @@ type AppError = Box<dyn Error>;
 async fn fetch_stock_tickers() -> Result<StockTickerType, AppError> {
     log::info!("Fetching stock tickers from remote");
 
+    let token = env::var("FINNHUB_TOKEN")
+        .expect("FINNHUB_TOKEN environment variable must be set");
     let mut stocks = BTreeMap::from(TICKERS);
+    let client = Client::new();
 
     for stock in stocks.clone().into_iter() {
-        let regex_str = format!(
-            "{}.*?regularMarketPrice.*?raw.*?:(?<price>.*?),",
-            stock.0
+        let url = format!(
+            "https://finnhub.io/api/v1/quote?symbol={}&token={}",
+            stock.0, token
         );
+        let resp = client.get(&url).send().await?;
+        let quote: FinnhubQuote = resp.json().await?;
 
-        let chrome_user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36";
-        let client = Client::builder().user_agent(chrome_user_agent).no_gzip().build().unwrap();
-
-        let price = Regex::new(&regex_str)?;
-        let url = format!("https://finance.yahoo.com/quote/{}/", stock.0);
-        let req = client.get(url).send().await?;
-        let body = req.text().await?;
-
-        if let Some(caps) = price.captures(&body) {
-            let b = caps.name("price").map_or("0", |m| m.as_str());
-            if let Some(v) = stocks.get_mut(stock.0) {
-                *v = b.parse().unwrap_or(0.0);
-            }
+        if let Some(v) = stocks.get_mut(stock.0) {
+            *v = quote.c;
         }
     }
 
@@ -147,16 +148,15 @@ async fn testing_fetch_of_stock() -> Result<(), AppError> {
     // Example output:
     //
     // [src/main.rs:120] &st = {
-    // "VWRL.AS": 107.2,
-    // "TSLA": 237.03,
-    // "AAPL": 180.51,
+    // "NVDA": 130.5,
+    // "TSLA": 419.25,
     // }
 
     assert_eq!(st.contains_key("TSLA"), true);
     assert_eq!(st.get("TSLA").unwrap() > &0.0, true);
 
-    assert_eq!(st.contains_key("VWRL.AS"), true);
-    assert_eq!(st.get("VWRL.AS").unwrap() > &0.0, true);
+    assert_eq!(st.contains_key("NVDA"), true);
+    assert_eq!(st.get("NVDA").unwrap() > &0.0, true);
 
     dbg!(&st);
 
@@ -165,7 +165,7 @@ async fn testing_fetch_of_stock() -> Result<(), AppError> {
 
 #[test]
 fn testing_conversion_to_buffer() {
-    let stocks: StockTickerType = BTreeMap::from([("TSLA", 500.0), ("VWRL.AS", 200.1)]);
+    let stocks: StockTickerType = BTreeMap::from([("TSLA", 500.0), ("NVDA", 200.1)]);
     let buf = convert_to_buffer(stocks);
-    assert_eq!(String::from_utf8(buf).unwrap(), "TSLA: 500$VWRL: 200$");
+    assert_eq!(String::from_utf8(buf).unwrap(), "NVDA: 200$TSLA: 500$");
 }
