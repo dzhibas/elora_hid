@@ -33,8 +33,7 @@ type AppError = Box<dyn Error>;
 async fn fetch_stock_tickers() -> Result<StockTickerType, AppError> {
     log::info!("Fetching stock tickers from remote");
 
-    let token = env::var("FINNHUB_TOKEN")
-        .expect("FINNHUB_TOKEN environment variable must be set");
+    let token = env::var("FINNHUB_TOKEN").expect("FINNHUB_TOKEN environment variable must be set");
     let mut stocks = BTreeMap::from(TICKERS);
     let client = Client::new();
 
@@ -143,6 +142,12 @@ async fn main() {
 
 #[tokio::test]
 async fn testing_fetch_of_stock() -> Result<(), AppError> {
+    // Skip test if FINNHUB_TOKEN is not set
+    if env::var("FINNHUB_TOKEN").is_err() {
+        eprintln!("Skipping test: FINNHUB_TOKEN not set");
+        return Ok(());
+    }
+
     let st = fetch_stock_tickers().await?;
 
     // Example output:
