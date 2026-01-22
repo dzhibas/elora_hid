@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, env, error::Error, time::Duration};
 
-use chrono::{Datelike, Timelike, Utc, Weekday};
+use chrono::{Datelike, Duration as ChronoDuration, Timelike, Utc, Weekday};
 use dotenv::dotenv;
 use hidapi::{DeviceInfo, HidApi};
 use reqwest::Client;
@@ -62,6 +62,42 @@ fn is_market_open() -> bool {
     current_minutes >= open_minutes && current_minutes < close_minutes
 }
 
+/// Calculates the next market open time in UTC
+fn get_next_market_open() -> chrono::DateTime<Utc> {
+    let mut date = Utc::now().date_naive();
+    let mut weekday = date.weekday();
+
+    // If Saturday or Sunday, advance to Monday
+    if weekday == Weekday::Sat {
+        date += ChronoDuration::days(2);
+    } else if weekday == Weekday::Sun {
+        date += ChronoDuration::days(1);
+    }
+
+    // Now date is Monday to Friday
+    let now = Utc::now();
+    let open_today = date
+        .and_hms_opt(MARKET_OPEN_HOUR, MARKET_OPEN_MINUTE, 0)
+        .unwrap()
+        .and_utc();
+
+    if now < open_today {
+        open_today
+    } else {
+        // After today's open, so next is tomorrow
+        date += ChronoDuration::days(1);
+        weekday = date.weekday();
+        if weekday == Weekday::Sat {
+            date += ChronoDuration::days(2);
+        } else if weekday == Weekday::Sun {
+            date += ChronoDuration::days(1);
+        }
+        date.and_hms_opt(MARKET_OPEN_HOUR, MARKET_OPEN_MINUTE, 0)
+            .unwrap()
+            .and_utc()
+    }
+}
+
 /// Returns the appropriate refresh rate based on market hours
 fn get_refresh_rate() -> Duration {
     if is_market_open() {
@@ -71,11 +107,22 @@ fn get_refresh_rate() -> Duration {
         );
         Duration::from_secs(REFRESH_RATE_MARKET_OPEN_SECS)
     } else {
-        log::debug!(
-            "Market is closed, using {} second refresh rate",
-            REFRESH_RATE_MARKET_CLOSED_SECS
-        );
-        Duration::from_secs(REFRESH_RATE_MARKET_CLOSED_SECS)
+        let next_open = get_next_market_open();
+        let until_open = next_open.signed_duration_since(Utc::now());
+        if until_open < ChronoDuration::hours(3) {
+            let delay = (until_open + ChronoDuration::minutes(2)).to_std().unwrap();
+            log::info!(
+                "Market closed, time until open < 3 hours, delaying {} seconds",
+                delay.as_secs()
+            );
+            delay
+        } else {
+            log::info!(
+                "Market is closed, using {} second refresh rate",
+                REFRESH_RATE_MARKET_CLOSED_SECS
+            );
+            Duration::from_secs(REFRESH_RATE_MARKET_CLOSED_SECS)
+        }
     }
 }
 
@@ -197,12 +244,11 @@ async fn main() {
         return;
     }
 
-    let mut interval = tokio::time::interval(Duration::from_secs(1));
     loop {
         let _ = run().await;
         // Recalculate refresh rate based on market hours
         let refresh_rate = get_refresh_rate();
-        interval = tokio::time::interval(refresh_rate);
+        let mut interval = tokio::time::interval(refresh_rate);
         interval.reset();
         interval.tick().await;
     }
@@ -226,11 +272,11 @@ async fn testing_fetch_of_stock() -> Result<(), AppError> {
     // "TSLA": 419.25,
     // }
 
-    assert_eq!(st.contains_key("TSLA"), true);
-    assert_eq!(st.get("TSLA").unwrap() > &0.0, true);
+    assert!(st.contains_key("TSLA"));
+    assert!(st.get("TSLA").unwrap() > &0.0);
 
-    assert_eq!(st.contains_key("NVDA"), true);
-    assert_eq!(st.get("NVDA").unwrap() > &0.0, true);
+    assert!(st.contains_key("NVDA"));
+    assert!(st.get("NVDA").unwrap() > &0.0);
 
     dbg!(&st);
 
