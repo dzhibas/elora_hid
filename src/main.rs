@@ -6,9 +6,9 @@ use reqwest::Client;
 use serde::Deserialize;
 
 /// splitkb.com vendor id
-const VENDOR_ID: u16 = 0x8d1d;
+const VENDOR_ID: u16 = 0x8D1D;
 /// Elora product id
-const PRODUCT_ID: u16 = 0x9d9d;
+const PRODUCT_ID: u16 = 0x9D9D;
 
 const USAGE_ID: u16 = 0x61;
 const USAGE_PAGE: u16 = 0xFF60;
@@ -58,16 +58,20 @@ async fn fetch_stock_tickers() -> Result<StockTickerType, AppError> {
 
 /// Converts StockTickerType into string which is sent through usb to keyboard
 fn convert_to_buffer(stocks: StockTickerType) -> Vec<u8> {
-    let mut buf = Vec::new();
+    let mut s = String::new();
+    let mut first = true;
     for (ticker, v) in stocks {
         // we use max 4 chars for ticker so it fits. example:
         // TSLA: 500$
         // VWRL: 200$
-        let st_string = format!("{:.4}: {:.0}$", ticker, v);
-        for ch in st_string.chars() {
-            buf.push(ch as u8);
+        if !first {
+            s.push('\n');
         }
+        first = false;
+        s.push_str(&format!("{:.4}: {:.0}$", ticker, v));
     }
+    let mut buf = s.into_bytes();
+    buf.resize(32, 0);
     buf
 }
 
@@ -97,7 +101,14 @@ async fn send_to_keyboard(stocks: StockTickerType) -> Result<(), AppError> {
     let buf = convert_to_buffer(stocks);
     device?.write(&buf)?;
 
-    log::debug!("{}", String::from_utf8(buf).unwrap());
+    let debug_str: String = buf.iter().map(|&b| {
+        if (32..=126).contains(&b) {
+            b as char
+        } else {
+            '.'
+        }
+    }).collect();
+    log::debug!("Buffer sent to HID device: {}", debug_str);
 
     Ok(())
 }
@@ -175,5 +186,7 @@ async fn testing_fetch_of_stock() -> Result<(), AppError> {
 fn testing_conversion_to_buffer() {
     let stocks: StockTickerType = BTreeMap::from([("TSLA", 500.0), ("NVDA", 200.1)]);
     let buf = convert_to_buffer(stocks);
-    assert_eq!(String::from_utf8(buf).unwrap(), "NVDA: 200$TSLA: 500$");
+    assert_eq!(buf.len(), 32);
+    let string_part = buf.into_iter().take_while(|&x| x != 0).collect::<Vec<u8>>();
+    assert_eq!(String::from_utf8(string_part).unwrap(), "NVDA: 200$\nTSLA: 500$");
 }
