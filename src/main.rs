@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, env, error::Error, time::Duration};
 
+use chrono::{Datelike, Timelike, Utc, Weekday};
 use dotenv::dotenv;
 use hidapi::{DeviceInfo, HidApi};
 use reqwest::Client;
@@ -13,8 +14,20 @@ const PRODUCT_ID: u16 = 0x9D9D;
 const USAGE_ID: u16 = 0x61;
 const USAGE_PAGE: u16 = 0xFF60;
 
-/// How often to refetch new data from dependency services in seconds
-const REFRESH_RATE_SECS: u16 = 60;
+/// How often to refetch new data when market is open (2 minutes)
+const REFRESH_RATE_MARKET_OPEN_SECS: u64 = 2 * 60;
+/// How often to refetch new data when market is closed (3 hours)
+const REFRESH_RATE_MARKET_CLOSED_SECS: u64 = 3 * 60 * 60;
+
+/// US market open time in UTC (14:30 UTC = 15:30 CET / 3:30 PM CET)
+const MARKET_OPEN_HOUR: u32 = 14;
+const MARKET_OPEN_MINUTE: u32 = 30;
+/// US market close time in UTC (21:00 UTC = 22:00 CET / 10:00 PM CET)
+const MARKET_CLOSE_HOUR: u32 = 21;
+const MARKET_CLOSE_MINUTE: u32 = 0;
+
+/// HID packet size in bytes
+const PACKET_SIZE: usize = 32;
 
 // type alias for stock tickers
 type StockTickerType = BTreeMap<&'static str, f64>;
@@ -30,6 +43,41 @@ struct FinnhubQuote {
 
 // custom app error
 type AppError = Box<dyn Error>;
+
+/// Checks if the US stock market is currently open
+/// Market hours: 14:30-21:00 UTC (15:30-22:00 CET), Monday-Friday
+fn is_market_open() -> bool {
+    let now = Utc::now();
+    let weekday = now.weekday();
+
+    // Market is closed on weekends
+    if weekday == Weekday::Sat || weekday == Weekday::Sun {
+        return false;
+    }
+
+    let current_minutes = now.hour() * 60 + now.minute();
+    let open_minutes = MARKET_OPEN_HOUR * 60 + MARKET_OPEN_MINUTE;
+    let close_minutes = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE;
+
+    current_minutes >= open_minutes && current_minutes < close_minutes
+}
+
+/// Returns the appropriate refresh rate based on market hours
+fn get_refresh_rate() -> Duration {
+    if is_market_open() {
+        log::debug!(
+            "Market is open, using {} second refresh rate",
+            REFRESH_RATE_MARKET_OPEN_SECS
+        );
+        Duration::from_secs(REFRESH_RATE_MARKET_OPEN_SECS)
+    } else {
+        log::debug!(
+            "Market is closed, using {} second refresh rate",
+            REFRESH_RATE_MARKET_CLOSED_SECS
+        );
+        Duration::from_secs(REFRESH_RATE_MARKET_CLOSED_SECS)
+    }
+}
 
 async fn fetch_stock_tickers() -> Result<StockTickerType, AppError> {
     log::info!("Fetching stock tickers from remote");
@@ -71,7 +119,7 @@ fn convert_to_buffer(stocks: StockTickerType) -> Vec<u8> {
         s.push_str(&format!("{:.4}: {:.0}$", ticker, v));
     }
     let mut buf = s.into_bytes();
-    buf.resize(32, 0);
+    buf.resize(PACKET_SIZE, 0);
     buf
 }
 
@@ -101,13 +149,16 @@ async fn send_to_keyboard(stocks: StockTickerType) -> Result<(), AppError> {
     let buf = convert_to_buffer(stocks);
     device?.write(&buf)?;
 
-    let debug_str: String = buf.iter().map(|&b| {
-        if (32..=126).contains(&b) {
-            b as char
-        } else {
-            '.'
-        }
-    }).collect();
+    let debug_str: String = buf
+        .iter()
+        .map(|&b| {
+            if (32..=126).contains(&b) {
+                b as char
+            } else {
+                '.'
+            }
+        })
+        .collect();
     log::debug!("Buffer sent to HID device: {}", debug_str);
 
     Ok(())
@@ -146,10 +197,14 @@ async fn main() {
         return;
     }
 
-    let mut interval = tokio::time::interval(Duration::from_secs(REFRESH_RATE_SECS.into()));
+    let mut interval = tokio::time::interval(Duration::from_secs(1));
     loop {
-        interval.tick().await;
         let _ = run().await;
+        // Recalculate refresh rate based on market hours
+        let refresh_rate = get_refresh_rate();
+        interval = tokio::time::interval(refresh_rate);
+        interval.reset();
+        interval.tick().await;
     }
 }
 
@@ -186,7 +241,10 @@ async fn testing_fetch_of_stock() -> Result<(), AppError> {
 fn testing_conversion_to_buffer() {
     let stocks: StockTickerType = BTreeMap::from([("TSLA", 500.0), ("NVDA", 200.1)]);
     let buf = convert_to_buffer(stocks);
-    assert_eq!(buf.len(), 32);
+    assert_eq!(buf.len(), PACKET_SIZE);
     let string_part = buf.into_iter().take_while(|&x| x != 0).collect::<Vec<u8>>();
-    assert_eq!(String::from_utf8(string_part).unwrap(), "NVDA: 200$\nTSLA: 500$");
+    assert_eq!(
+        String::from_utf8(string_part).unwrap(),
+        "NVDA: 200$\nTSLA: 500$"
+    );
 }
