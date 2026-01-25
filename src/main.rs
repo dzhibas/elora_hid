@@ -1,4 +1,4 @@
-use std::{env, error::Error, path::Path, time::Duration};
+use std::{error::Error, path::Path, time::Duration};
 
 use chrono::{Datelike, Duration as ChronoDuration, Timelike, Utc, Weekday};
 use dotenv::dotenv;
