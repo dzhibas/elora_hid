@@ -1,10 +1,10 @@
-use std::{collections::BTreeMap, env, error::Error, time::Duration};
+use std::{env, error::Error, path::Path, time::Duration};
 
 use chrono::{Datelike, Duration as ChronoDuration, Timelike, Utc, Weekday};
 use dotenv::dotenv;
 use hidapi::{DeviceInfo, HidApi};
-use reqwest::Client;
-use serde::Deserialize;
+use tokio::fs;
+use tokio::process::Command;
 
 /// splitkb.com vendor id
 const VENDOR_ID: u16 = 0x8D1D;
@@ -29,17 +29,10 @@ const MARKET_CLOSE_MINUTE: u32 = 0;
 /// HID packet size in bytes
 const PACKET_SIZE: usize = 32;
 
-// type alias for stock tickers
-type StockTickerType = BTreeMap<&'static str, f64>;
-// interested tickers
-const TICKERS: [(&str, f64); 2] = [("TSLA", 0.0), ("NVDA", 0.0)];
-
-/// Finnhub quote response
-#[derive(Deserialize)]
-struct FinnhubQuote {
-    /// Current price
-    c: f64,
-}
+/// File paths and Commands
+const PRICES_FILE_PATH: &str = "prices.txt";
+const PULL_COMMAND: &str = "npx";
+const PULL_ARGS: [&str; 2] = ["tsx", "pull.ts"];
 
 // custom app error
 type AppError = Box<dyn Error>;
@@ -126,47 +119,65 @@ fn get_refresh_rate() -> Duration {
     }
 }
 
-async fn fetch_stock_tickers() -> Result<StockTickerType, AppError> {
-    log::info!("Fetching stock tickers from remote");
+/// Runs the local command to pull prices and reads the resulting file
+async fn fetch_prices_from_local_command() -> Result<String, AppError> {
+    log::info!(
+        "Executing local command: {} {}",
+        PULL_COMMAND,
+        PULL_ARGS.join(" ")
+    );
 
-    let token = env::var("FINNHUB_TOKEN").expect("FINNHUB_TOKEN environment variable must be set");
-    let mut stocks = BTreeMap::from(TICKERS);
-    let client = Client::new();
+    // 1. Run the command
+    // Note: On Windows you might need "npx.cmd" depending on your environment,
+    // but usually "npx" works in modern shells.
+    let status = Command::new(PULL_COMMAND)
+        .args(PULL_ARGS)
+        .status()
+        .await
+        .map_err(|e| format!("Failed to execute command: {}", e))?;
 
-    for stock in stocks.clone().into_iter() {
-        let url = format!(
-            "https://finnhub.io/api/v1/quote?symbol={}&token={}",
-            stock.0, token
-        );
-        let resp = client.get(&url).send().await?;
-        let quote: FinnhubQuote = resp.json().await?;
-
-        if let Some(v) = stocks.get_mut(stock.0) {
-            *v = quote.c;
-        }
+    if !status.success() {
+        return Err(format!("Command finished with non-zero exit code: {}", status).into());
     }
 
-    log::debug!("Fetching complete");
+    // 2. Check if file exists
+    if !Path::new(PRICES_FILE_PATH).exists() {
+        return Err(format!("Command finished, but {} was not found", PRICES_FILE_PATH).into());
+    }
 
-    Ok(stocks)
+    // 3. Read the file content
+    log::info!("Reading content from {}", PRICES_FILE_PATH);
+    let content = fs::read_to_string(PRICES_FILE_PATH)
+        .await
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    // Trim whitespace to avoid accidental newlines taking up buffer space
+    let trimmed = content.trim().to_string();
+
+    if trimmed.is_empty() {
+        return Err("Price file was empty".into());
+    }
+
+    Ok(trimmed)
 }
 
-/// Converts StockTickerType into string which is sent through usb to keyboard
-fn convert_to_buffer(stocks: StockTickerType) -> Vec<u8> {
-    let mut s = String::new();
-    let mut first = true;
-    for (ticker, v) in stocks {
-        // we use max 4 chars for ticker so it fits. example:
-        // TSLA: 500$
-        // VWRL: 200$
-        if !first {
-            s.push('\n');
-        }
-        first = false;
-        s.push_str(&format!("{:.4}: {:.0}$", ticker, v));
+/// Converts the raw string into a byte buffer for the keyboard
+/// The buffer must be exactly PACKET_SIZE (32 bytes).
+fn convert_to_buffer(text: String) -> Vec<u8> {
+    // Convert string to bytes
+    let mut buf = text.into_bytes();
+
+    // If it's too long, truncate it
+    if buf.len() > PACKET_SIZE {
+        log::warn!("Output content exceeds {} bytes, truncating.", PACKET_SIZE);
+        buf.truncate(PACKET_SIZE);
     }
-    let mut buf = s.into_bytes();
-    buf.resize(PACKET_SIZE, 0);
+
+    // If it's too short, pad with 0 (null bytes)
+    if buf.len() < PACKET_SIZE {
+        buf.resize(PACKET_SIZE, 0);
+    }
+
     buf
 }
 
@@ -182,7 +193,7 @@ fn find_elora_device(api: &HidApi) -> Option<&DeviceInfo> {
 }
 
 /// sends stock ticker to keyboard
-async fn send_to_keyboard(stocks: StockTickerType) -> Result<(), AppError> {
+async fn send_to_keyboard(text: String) -> Result<(), AppError> {
     log::info!("Sending to usb keyboard");
 
     let api = HidApi::new()?;
@@ -193,16 +204,19 @@ async fn send_to_keyboard(stocks: StockTickerType) -> Result<(), AppError> {
     }
 
     let device = device.unwrap().open_device(&api);
-    let buf = convert_to_buffer(stocks);
+    let buf = convert_to_buffer(text);
+
+    // Write to device
     device?.write(&buf)?;
 
+    // Debug logging to see what we actually sent
     let debug_str: String = buf
         .iter()
         .map(|&b| {
             if (32..=126).contains(&b) {
                 b as char
             } else {
-                '.'
+                '.' // Represent null/control bytes as dots
             }
         })
         .collect();
@@ -213,12 +227,18 @@ async fn send_to_keyboard(stocks: StockTickerType) -> Result<(), AppError> {
 
 /// Main worker which fetches stuff and sends it to keyboard
 async fn run() -> Result<(), AppError> {
-    let stocks = fetch_stock_tickers().await?;
-    let res = send_to_keyboard(stocks).await;
-    if res.is_err() {
-        log::error!("Error occured while sending data to keyboard");
+    // 1. Execute command and read file
+    match fetch_prices_from_local_command().await {
+        Ok(content) => {
+            // 2. Send to keyboard
+            send_to_keyboard(content).await?;
+            Ok(())
+        }
+        Err(e) => {
+            // We return error here so main loop can log it, but we don't crash
+            Err(e)
+        }
     }
-    Ok(())
 }
 
 #[tokio::main]
@@ -228,69 +248,55 @@ async fn main() {
 
     println!(
         r"
-  _____ _                   _   _ ___ ____  
- | ____| | ___  _ __ __ _  | | | |_ _|  _ \ 
- |  _| | |/ _ \| '__/ _` | | |_| || || | | |
- | |___| | (_) | | | (_| | |  _  || || |_| |
- |_____|_|\___/|_|  \__,_| |_| |_|___|____/
+ _____ _                    _   _ ___ ____  
+| ____| | ___  _ __ __ _   | | | |_ _|  _ \ 
+|  _| | |/ _ \| '__/ _` |  | |_| || || | | |
+| |___| | (_) | | | (_| |  |  _  || || |_| |
+|_____|_|\___/|_|  \__,_|  |_| |_|___|____/ 
 "
     );
 
-    let api = HidApi::new().unwrap();
-    let device = find_elora_device(&api);
-
-    if device.is_none() {
-        log::error!("Error: Elora keyboard not found connected");
-        return;
+    let api_check = HidApi::new();
+    if let Ok(api) = api_check {
+        if find_elora_device(&api).is_none() {
+            log::warn!("Elora keyboard not detected at startup. Will retry in loop.");
+        }
     }
 
     loop {
-        let _ = run().await;
+        // Run logic
+        if let Err(e) = run().await {
+            log::error!("Run failed (will retry next cycle): {}", e);
+        }
+
         // Recalculate refresh rate based on market hours
         let refresh_rate = get_refresh_rate();
+
         let mut interval = tokio::time::interval(refresh_rate);
-        interval.reset();
-        interval.tick().await;
+        interval.reset(); // Align interval
+        interval.tick().await; // Wait for next tick
     }
-}
-
-#[tokio::test]
-async fn testing_fetch_of_stock() -> Result<(), AppError> {
-    dotenv().ok();
-    // Skip test if FINNHUB_TOKEN is not set
-    if env::var("FINNHUB_TOKEN").is_err() {
-        eprintln!("Skipping test: FINNHUB_TOKEN not set");
-        return Ok(());
-    }
-
-    let st = fetch_stock_tickers().await?;
-
-    // Example output:
-    //
-    // [src/main.rs:120] &st = {
-    // "NVDA": 130.5,
-    // "TSLA": 419.25,
-    // }
-
-    assert!(st.contains_key("TSLA"));
-    assert!(st.get("TSLA").unwrap() > &0.0);
-
-    assert!(st.contains_key("NVDA"));
-    assert!(st.get("NVDA").unwrap() > &0.0);
-
-    dbg!(&st);
-
-    Ok(())
 }
 
 #[test]
-fn testing_conversion_to_buffer() {
-    let stocks: StockTickerType = BTreeMap::from([("TSLA", 500.0), ("NVDA", 200.1)]);
-    let buf = convert_to_buffer(stocks);
+fn testing_conversion_to_buffer_truncation() {
+    let input = "This string is way too long for the 32 byte limit".to_string();
+    let buf = convert_to_buffer(input);
     assert_eq!(buf.len(), PACKET_SIZE);
-    let string_part = buf.into_iter().take_while(|&x| x != 0).collect::<Vec<u8>>();
-    assert_eq!(
-        String::from_utf8(string_part).unwrap(),
-        "NVDA: 200$\nTSLA: 500$"
-    );
+
+    // Check if it truncated correctly
+    let string_part = std::str::from_utf8(&buf).unwrap();
+    assert_eq!(string_part, "This string is way too long for ");
+}
+
+#[test]
+fn testing_conversion_to_buffer_padding() {
+    let input = "Short".to_string();
+    let buf = convert_to_buffer(input);
+    assert_eq!(buf.len(), PACKET_SIZE);
+
+    // Check content
+    assert_eq!(buf[0], b'S');
+    assert_eq!(buf[4], b't');
+    assert_eq!(buf[5], 0); // Padding starts
 }
