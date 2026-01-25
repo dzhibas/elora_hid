@@ -15,7 +15,7 @@ import { writeFile } from 'fs/promises';
   const page = await context.newPage();
 
   // List of symbols to scrape
-  const symbols = ['TSLA', 'EURONEXT-VWRL', 'GOLD'];
+  const symbols = ['EURONEXT-VWRL', 'TSLA', 'GOLD'];
   let fileContent = '';
 
   console.log('Starting batch scrape...');
@@ -51,9 +51,9 @@ import { writeFile } from 'fs/promises';
       const displaySymbol = symbol === 'EURONEXT-VWRL' ? 'VWRL' : symbol;
       
       // Determine currency symbol: € for VWRL, $ for others
-      const currency = symbol === 'EURONEXT-VWRL' ? '' : '$';
+      const currency = symbol === 'EURONEXT-VWRL' ? '$' : '$';
 
-      fileContent += `${displaySymbol}: ${finalPrice}${currency}\n`;
+      fileContent += `${displaySymbol}:${finalPrice}${currency}\n`;
 
     } catch (error) {
       console.log('Failed');
